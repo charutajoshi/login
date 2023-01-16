@@ -4,6 +4,8 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.Extensions.Primitives;
 
 namespace Login.CustomMiddleware
 {
@@ -19,31 +21,68 @@ namespace Login.CustomMiddleware
 
         public async Task Invoke(HttpContext httpContext)
         {
-            var query = httpContext.Request.Query;
-
-            if (query.ContainsKey("email")
-                && query.ContainsKey("password"))
+            if (httpContext.Request.Path == "/" && httpContext.Request.Method == "POST")
             {
-                string email = query["email"];
-                string password = query["password"];
+                StreamReader reader = new StreamReader(httpContext.Request.Body);
+                string body = await reader.ReadToEndAsync();
+                Dictionary<string, StringValues> queryDict = QueryHelpers.ParseQuery(body);
 
-                if (email == "admin@test.com" && password == "123")
+                string? email = null, password = null;
+
+                if (queryDict.ContainsKey("email"))
                 {
-                    await httpContext.Response.WriteAsync("Successful login!"); 
+                    email = Convert.ToString(queryDict["email"][0]);
                 }
                 else
                 {
-                    httpContext.Response.StatusCode = 400; 
-                    await httpContext.Response.WriteAsync("Invalid email or password"); 
+                    httpContext.Response.StatusCode = 400;
+                    httpContext.Response.WriteAsync("Invalid input for 'email'\n");
+                }
+
+                if (queryDict.ContainsKey("password"))
+                {
+                    password = Convert.ToString(queryDict["password"][0]);
+                }
+                else
+                {
+                    if (httpContext.Response.StatusCode == 200)
+                    {
+                        httpContext.Response.StatusCode = 400;
+                    }
+                    httpContext.Response.WriteAsync("Invalid input for 'password'\n");
+                }
+
+                if (string.IsNullOrEmpty(email) == false && string.IsNullOrEmpty(password) == false)
+                {
+                    string validEmail = "admin@test.com", validPw = "123";
+                    bool isValidLogin;
+
+                    if (email == validEmail && password == validPw)
+                    {
+                        await httpContext.Response.WriteAsync("Successful login!");
+                    }
+                    else
+                    {
+                        if (httpContext.Response.StatusCode == 200)
+                        {
+                            httpContext.Response.StatusCode = 400;
+                        }
+                        httpContext.Response.WriteAsync("Invalid login");
+                    }
+                }
+                else
+                {
+                    if (httpContext.Response.StatusCode == 200)
+                    {
+                        httpContext.Response.StatusCode = 400;
+                    }
+                    httpContext.Response.WriteAsync("Invalid login");
                 }
             }
             else
             {
-                httpContext.Response.StatusCode = 400;
-                await httpContext.Response.WriteAsync("No credentials entered!");
+                await _next(httpContext);
             }
-
-            await _next(httpContext);
         }
     }
 
